@@ -79,7 +79,7 @@ try:
         task_types=task_types,
         initial_position=drone_initial_position,
         speed=1,
-        intent_threshold=0.6  # Can adjust this (must be >= 0.5)
+        intent_threshold=0.5  # Can adjust this (must be >= 0.5)
     )
     
     # Wait for first intent before initializing target

@@ -225,7 +225,6 @@ class IntentInferenceSystem:
                         
                     elif task_type == 'cooperative':
                         self.agents_at_cooperative_tasks[task_name].add(agent_id)
-                        # print(f"{agent_id} at {task_name} (cooperative). Agents present: {self.agents_at_cooperative_tasks[task_name]}")
                         
                         if len(self.agents_at_cooperative_tasks[task_name]) >= 2:
                             print(f"Both agents at {task_name}, task completed!\n")
@@ -325,7 +324,8 @@ class DroneCooperationAgent:
         task_types: Dict[str, str],
         initial_position: np.ndarray,
         speed: float = 1.5,
-        intent_threshold: float = 0.5
+        intent_threshold: float = 0.5,
+        commitment_distance: float = 4.0
     ):
         """
         Args:
@@ -334,6 +334,7 @@ class DroneCooperationAgent:
             initial_position: Starting position of the drone
             speed: Movement speed (m/s)
             intent_threshold: Threshold for reacting to human intent (must be >= 0.5)
+            commitment_distance: Distance within which drone commits to completing task (m)
         """
         if intent_threshold < 0.5:
             raise ValueError(f"intent_threshold must be >= 0.5, got {intent_threshold}")
@@ -343,6 +344,7 @@ class DroneCooperationAgent:
         self.position = initial_position.copy()
         self.speed = speed
         self.intent_threshold = intent_threshold
+        self.commitment_distance = commitment_distance
         
         # Identify box tasks (independent tasks)
         self.box_tasks = [name for name, typ in task_types.items() if typ == 'independent']
@@ -357,6 +359,7 @@ class DroneCooperationAgent:
         print(f"DroneCooperationAgent initialized:")
         print(f"  - Speed: {speed} m/s")
         print(f"  - Intent threshold: {intent_threshold}")
+        print(f"  - Commitment distance: {commitment_distance} m")
         print(f"  - Box tasks: {self.box_tasks}")
         print(f"  - Cooperative task: {self.cooperative_task}")
     
@@ -374,37 +377,9 @@ class DroneCooperationAgent:
         if completed_tasks is None:
             completed_tasks = set()
         
-        if not human_intent_probs:
-            # Fallback: random uncompleted box
-            available_boxes = [b for b in self.box_tasks if b not in completed_tasks]
-            if not available_boxes:
-                available_boxes = self.box_tasks
-            self.target = np.random.choice(available_boxes)
-            print(f"No initial intent, drone target: {self.target} (random)")
-            return self.target
-        
-        # Find human's max intent
-        max_intent_task = max(human_intent_probs, key=human_intent_probs.get)
-        max_intent_prob = human_intent_probs[max_intent_task]
-        
-        if max_intent_prob > self.intent_threshold:
-            if max_intent_task == self.cooperative_task:
-                # Human wants dummy -> drone goes to dummy
-                self.target = self.cooperative_task
-                print(f"Human intent: {max_intent_task} ({max_intent_prob:.2f}), drone target: {self.target}")
-            elif max_intent_task in self.box_tasks:
-                # Human wants a box -> drone goes to the OTHER box
-                other_boxes = [b for b in self.box_tasks if b != max_intent_task and b not in completed_tasks]
-                if other_boxes:
-                    self.target = other_boxes[0]
-                    print(f"Human intent: {max_intent_task} ({max_intent_prob:.2f}), drone target: {self.target} (other box)")
-        else:
-            # No strong intent, choose random uncompleted box if not already assigned
-            if self.target is None:
-                available_boxes = [b for b in self.box_tasks if b not in completed_tasks]
-                if available_boxes:
-                    self.target = np.random.choice(available_boxes)
-                    print(f"Human intent unclear ({max_intent_prob:.2f}), drone target: {self.target} (random)")
+        # Default: go to dummy (waiting for cooperation)
+        self.target = self.cooperative_task
+        print(f"Drone initial target: {self.target} (default)")
         
         return self.target
     
@@ -416,9 +391,13 @@ class DroneCooperationAgent:
         """
         Update drone target based on current human intent.
         
-        Logic:
-        - If human wants dummy -> drone goes to dummy
-        - If human wants a box -> drone goes to the OTHER box (if available)
+        Simple logic:
+        1. If human wants dummy -> go to dummy (unless committed to box)
+        2. If human wants a box:
+           - Has other boxes -> go to random other box
+           - No other boxes but dummy available -> go to dummy
+           - Only one task left (box or dummy) -> go to it (compete)
+        3. Commitment: close to box (< commitment_distance) -> don't switch unless conflict
         
         Args:
             human_intent_probs: Current human intent probabilities
@@ -432,7 +411,6 @@ class DroneCooperationAgent:
         
         # Check if current target is completed
         if self.target in completed_tasks:
-            # Pick a new uncompleted task
             uncompleted = [name for name in self.task_positions.keys() 
                           if name not in completed_tasks]
             if not uncompleted:
@@ -440,8 +418,16 @@ class DroneCooperationAgent:
                 return None
             
             self.target = np.random.choice(uncompleted)
-            print(f"Previous target completed, drone switching to: {self.target}")
+            print(f"Target completed, switching to: {self.target}")
             return self.target
+        
+        # Check if drone is committed to current box
+        is_committed = False
+        if self.target and self.task_types.get(self.target) == 'independent':
+            target_pos = self.task_positions[self.target][:2]
+            dist = np.linalg.norm(self.position[:2] - target_pos)
+            if dist < self.commitment_distance:
+                is_committed = True
         
         # Find human's max intent
         max_intent_task = max(human_intent_probs, key=human_intent_probs.get)
@@ -449,24 +435,48 @@ class DroneCooperationAgent:
         
         # Only react if above threshold
         if max_intent_prob > self.intent_threshold:
-            new_target = None
             
+            # Case 1: Human wants dummy
             if max_intent_task == self.cooperative_task:
-                # Human wants dummy -> drone goes to dummy
-                new_target = self.cooperative_task
+                if is_committed:
+                    return self.target
                 
+                if self.target != self.cooperative_task:
+                    print(f"Human -> {max_intent_task}, Drone: {self.target} -> {self.cooperative_task}")
+                    self.target = self.cooperative_task
+                return self.target
+            
+            # Case 2: Human wants a box
             elif max_intent_task in self.box_tasks:
-                # Human wants a box -> drone goes to the OTHER box
+                
+                # If committed and not conflicting, keep target
+                if is_committed and self.target != max_intent_task:
+                    return self.target
+                
+                # Find other available boxes (not what human wants, not completed)
                 other_boxes = [b for b in self.box_tasks 
                               if b != max_intent_task and b not in completed_tasks]
                 
                 if other_boxes:
-                    new_target = other_boxes[0]
-            
-            # Update target if it changed
-            if new_target and new_target != self.target and new_target not in completed_tasks:
-                print(f"Human intent: {max_intent_task} ({max_intent_prob:.2f}), drone switching: {self.target} -> {new_target}")
-                self.target = new_target
+                    # Has other boxes, pick random one
+                    new_target = np.random.choice(other_boxes)
+                    if self.target != new_target:
+                        print(f"Human -> {max_intent_task}, Drone: {self.target} -> {new_target}")
+                        self.target = new_target
+                
+                elif self.cooperative_task not in completed_tasks:
+                    # No other boxes, but dummy still available
+                    if self.target != self.cooperative_task:
+                        print(f"No other boxes, Drone: {self.target} -> {self.cooperative_task}")
+                        self.target = self.cooperative_task
+                
+                else:
+                    # Only one task left (the box human wants), go compete
+                    if self.target != max_intent_task:
+                        print(f"Only one task left, competing for {max_intent_task}")
+                        self.target = max_intent_task
+                
+                return self.target
         
         return self.target
     
