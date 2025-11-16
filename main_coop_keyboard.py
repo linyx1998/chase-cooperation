@@ -79,8 +79,9 @@ try:
         task_types=task_types,
         initial_position=drone_initial_position,
         speed=1.5,
-        intent_threshold=0.5,  # Can adjust this (must be >= 0.5)
-        commitment_distance=3.0
+        intent_threshold=0.7,  # Can adjust this (must be >= 0.5)
+        commitment_distance=5.0,
+        dummy_wait_timeout=5.0
     )
     
     # Wait for first intent before initializing target
@@ -268,7 +269,7 @@ def update(frame):
     
     # --- 4. Update Drone Based on Intent ---
     if drone_initialized:
-        drone_agent.update_target(probabilities, intent_system.completed_tasks)
+        drone_agent.update_target(probabilities, intent_system.completed_tasks, total_time)
         drone_agent.move_towards_target(delta_time)
     
     # --- 5. Update Intent System for Drone (to check completion) ---
