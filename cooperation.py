@@ -359,7 +359,7 @@ class DroneCooperationAgent:
         # Current target
         self.target: Optional[str] = None
         self.dummy_arrival_time: Optional[float] = None
-        self.dummy_timeout_cooldown_until: Optional[float] = None  # Cooldown after timeout
+        self.dummy_timeout_cooldown_until: Optional[float] = None
         
         print(f"DroneCooperationAgent initialized:")
         print(f"  - Speed: {speed} m/s")
@@ -371,7 +371,7 @@ class DroneCooperationAgent:
     
     def initialize_target(self, human_intent_probs: Dict[str, float], completed_tasks: Set[str] = None) -> str:
         """
-        Initialize drone target based on human's initial intent.
+        Initialize drone target.
         
         Args:
             human_intent_probs: Human's intent probabilities
@@ -397,23 +397,6 @@ class DroneCooperationAgent:
     ) -> Optional[str]:
         """
         Update drone target based on current human intent.
-        
-        Simple logic:
-        1. If human wants dummy -> go to dummy (unless committed to box)
-        2. If human wants a box:
-           - Has other boxes -> go to random other box
-           - No other boxes but dummy available -> go to dummy
-           - Only one task left (box or dummy) -> go to it (compete)
-        3. Commitment: close to box (< commitment_distance) -> don't switch unless conflict
-        4. Dummy timeout: if at dummy > timeout and no intent > threshold, choose random box
-        
-        Args:
-            human_intent_probs: Current human intent probabilities
-            completed_tasks: Set of completed task names
-            current_time: Current simulation time (seconds)
-            
-        Returns:
-            New target task name, or None if all tasks completed
         """
         if not human_intent_probs:
             return self.target
@@ -456,15 +439,25 @@ class DroneCooperationAgent:
         max_intent_task = max(human_intent_probs, key=human_intent_probs.get)
         max_intent_prob = human_intent_probs[max_intent_task]
         
-        # Check dummy timeout (independent of intent threshold)
+        # Check dummy timeout
         if (self.target == self.cooperative_task and 
             self.dummy_arrival_time is not None and 
             current_time - self.dummy_arrival_time > self.dummy_wait_timeout):
             available_boxes = [b for b in self.box_tasks if b not in completed_tasks]
             if available_boxes:
-                self.target = np.random.choice(available_boxes)
+                if len(available_boxes) == 1:
+                    self.target = available_boxes[0]
+                else:
+                    human_intended_boxes = [b for b in available_boxes 
+                                          if human_intent_probs.get(b, 0) > self.intent_threshold]
+                    if human_intended_boxes:
+                        other_boxes = [b for b in available_boxes if b not in human_intended_boxes]
+                        self.target = other_boxes[0] if other_boxes else np.random.choice(available_boxes)
+                    else:
+                        self.target = np.random.choice(available_boxes)
+                
                 self.dummy_arrival_time = None
-                self.dummy_timeout_cooldown_until = current_time + 5.0  # 5s cooldown
+                self.dummy_timeout_cooldown_until = current_time + 5.0
                 return self.target
         
         # Only react if above threshold
@@ -507,15 +500,15 @@ class DroneCooperationAgent:
                         self.target = new_target
                 
                 elif self.cooperative_task not in completed_tasks:
-                    # No other boxes, but dummy still available
-                    if self.target != self.cooperative_task:
-                        print(f"No other boxes, Drone: {self.target} -> {self.cooperative_task}")
+                    if (self.dummy_timeout_cooldown_until is not None and 
+                        current_time < self.dummy_timeout_cooldown_until):
+                        pass
+                    elif self.target != self.cooperative_task:
                         self.target = self.cooperative_task
                 
                 else:
                     # Only one task left (the box human wants), go compete
                     if self.target != max_intent_task:
-                        print(f"Only one task left, competing for {max_intent_task}")
                         if self.target == self.cooperative_task:
                             self.dummy_arrival_time = None
                         self.target = max_intent_task
