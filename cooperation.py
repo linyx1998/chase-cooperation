@@ -369,21 +369,46 @@ class DroneCooperationAgent:
         print(f"  - Box tasks: {self.box_tasks}")
         print(f"  - Cooperative task: {self.cooperative_task}")
     
-    def initialize_target(self, human_intent_probs: Dict[str, float], completed_tasks: Set[str] = None) -> str:
-        """
-        Initialize drone target.
+    # def initialize_target(self, human_intent_probs: Dict[str, float], completed_tasks: Set[str] = None) -> str:
+    #     """
+    #     Initialize drone target.
         
-        Args:
-            human_intent_probs: Human's intent probabilities
-            completed_tasks: Set of already completed tasks (usually empty at init)
+    #     Args:
+    #         human_intent_probs: Human's intent probabilities
+    #         completed_tasks: Set of already completed tasks (usually empty at init)
             
-        Returns:
-            Initial target task name
-        """
+    #     Returns:
+    #         Initial target task name
+    #     """
+    #     if completed_tasks is None:
+    #         completed_tasks = set()
+        
+    #     # Default: go to dummy (waiting for cooperation)
+    #     self.target = self.cooperative_task
+    #     print(f"Drone initial target: {self.target} (default)")
+        
+    #     return self.target
+    
+    def initialize_target(self, human_intent_probs, completed_tasks=None):
         if completed_tasks is None:
             completed_tasks = set()
         
-        # Default: go to dummy (waiting for cooperation)
+        # Check if human has clear initial intent
+        if human_intent_probs:
+            max_intent_task = max(human_intent_probs, key=human_intent_probs.get)
+            max_intent_prob = human_intent_probs[max_intent_task]
+            
+            if max_intent_prob > self.intent_threshold:
+                if max_intent_task == self.cooperative_task:
+                    self.target = self.cooperative_task
+                elif max_intent_task in self.box_tasks:
+                    other_boxes = [b for b in self.box_tasks 
+                                if b != max_intent_task and b not in completed_tasks]
+                    self.target = other_boxes[0] if other_boxes else self.cooperative_task
+                print(f"Drone initial target: {self.target} (based on human intent)")
+                return self.target
+        
+        # Default: go to dummy
         self.target = self.cooperative_task
         print(f"Drone initial target: {self.target} (default)")
         

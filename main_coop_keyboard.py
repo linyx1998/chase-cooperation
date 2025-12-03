@@ -52,7 +52,7 @@ except Exception as e:
 # --- 3. Simulation State ---
 
 # Car state
-car_position = np.array([0.0, 0.0, 0.0])
+car_position = np.array([0.0, 10.0, 0.0])
 car_angle = np.pi / 2
 car_radius = 0.2
 current_speed = 0.0
