@@ -1,11 +1,10 @@
-# --- Import Necessary Libraries ---
-
 import numpy as np
 import time
 import os
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from cooperation import IntentInferenceSystem, DroneCooperationAgent
+from recommendation import RecommendationManager
 
 # --- 1. Define Tasks and Create Log Directory ---
 
@@ -21,6 +20,13 @@ task_types = {
     "box1": "independent",
     "box2": "independent",
     "dummy": "cooperative",
+}
+
+# Define task rewards
+task_rewards_dict = {
+    "box1": 5.0,
+    "box2": 5.0,
+    "dummy": 10.0
 }
 
 task_names = sorted(tasks.keys())
@@ -41,7 +47,7 @@ try:
         task_completion_radius=completion_radius,
         distance_scale_factor=1.0,
         inference_interval=0.5,
-        enable_csv=True,
+        enable_csv=False,
         csv_file_path=log_path
     )
     print("IntentInferenceSystem initialized successfully.\n")
@@ -52,7 +58,7 @@ except Exception as e:
 # --- 3. Simulation State ---
 
 # Car state
-car_position = np.array([0.0, 10.0, 0.0])
+car_position = np.array([0.0, -1.0, 0.0])
 car_angle = np.pi / 2
 car_radius = 0.2
 current_speed = 0.0
@@ -105,8 +111,25 @@ try:
 except Exception as e:
     print(f"Error initializing DroneCooperationAgent: {e}")
     exit()
+    
+# --- 5. Initialize Recommendation System ---
 
-# --- 5. Setup the Matplotlib Animation ---
+try:
+    rec_manager = RecommendationManager(
+        task_positions=tasks,
+        task_types=task_types,
+        task_rewards=task_rewards_dict,
+        distance_penalty=1.5,       # penalty parameter for distance to task
+        intent_threshold=0.3        # threshold for considering intent
+    )
+    
+    print("RecommendationManager initialized successfully.\n")
+    
+except Exception as e:
+    print(f"Error initializing RecommendationManager: {e}")
+    exit()
+
+# --- 6. Setup the Matplotlib Animation ---
 
 fig, ax = plt.subplots(figsize=(10, 8))
 ax.set_aspect('equal')
@@ -116,7 +139,7 @@ ax.set_title("Multi-Agent Intent Inference & Cooperation")
 ax.set_xlabel("X coordinate (m)")
 ax.set_ylabel("Y coordinate (m)")
 
-# --- Plot Artists ---
+# --- Plots ---
 
 # Car (blue circle)
 car_artist = plt.Circle((car_position[0], car_position[1]), 
@@ -158,6 +181,15 @@ for name, pos in tasks.items():
 # Time text
 time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
 
+# Recommendation text
+recommendation_text = ax.text(
+    -9.8, 8.1, '',
+    fontsize=10,
+    bbox=dict(boxstyle='square', facecolor='lightgreen', alpha=0.8, edgecolor='none'),
+    verticalalignment='top',
+    horizontalalignment='left'
+)
+
 # Drone status text
 drone_status_text = ax.text(0.02, 0.90, '', transform=ax.transAxes, fontsize=9, color='darkorange')
 
@@ -173,7 +205,7 @@ prob_bars = ax_bar.barh(task_names, [0] * len(task_names), color='#3b82f6')
 
 ax.legend(handles=[car_artist, drone_artist], loc='lower left')
 
-# --- 6. Keyboard Control Functions ---
+# --- 7. Keyboard Control Functions ---
 
 def on_key_press(event):
     keys_pressed[event.key] = True
@@ -184,7 +216,7 @@ def on_key_release(event):
 fig.canvas.mpl_connect('key_press_event', on_key_press)
 fig.canvas.mpl_connect('key_release_event', on_key_release)
 
-# --- 7. Animation Functions ---
+# --- 8. Animation Functions ---
 
 def init():
     car_artist.center = (car_position[0], car_position[1])
@@ -203,8 +235,16 @@ def init():
         task_radius_plots[name].set_visible(True)
         task_labels[name].set_color('#b91c1c')
     
+    # artists = [car_artist, car_heading_line, drone_artist, drone_target_line, 
+    #            time_text, drone_status_text] + \
+    #           list(prob_lines.values()) + \
+    #           list(task_radius_plots.values()) + \
+    #           list(task_labels.values())
+
+    recommendation_text.set_text('')
+    
     artists = [car_artist, car_heading_line, drone_artist, drone_target_line, 
-               time_text, drone_status_text] + \
+               time_text, drone_status_text, recommendation_text] + \
               list(prob_lines.values()) + \
               list(task_radius_plots.values()) + \
               list(task_labels.values())
@@ -261,27 +301,54 @@ def update(frame):
     probabilities = intent_system.get_probabilities()
     if probabilities is None:
         probabilities = {name: 0.0 for name in task_names}
+        
+    # --- 3. Get Recommendation ---
+    if probabilities:
+        recommendation = rec_manager.get_recommendation(
+            human_intent=probabilities,
+            completed_tasks=intent_system.completed_tasks,
+            human_position=car_position,
+            drone_position=drone_agent.get_position()
+        )
+        
+        # Update recommendation text
+        recommendation_text.set_text("")
+        
+        if recommendation:
+            rec_text = f"Recommendation:\n"
+            rec_text += f"    {recommendation['task'].upper()}, whose "
+            rec_text += f"intent = {recommendation['intent']:.2f}"
+            # rec_text += f"\nExpected total future distance: {recommendation['h_distance']+recommendation['d_distance']:.1f} m"
+            rec_text += f"\nExpected Future distance of Human: {recommendation['h_distance']:.1f} m"
+            rec_text += f"\nExpected Future distance of Drone: {recommendation['d_distance']:.1f} m"
+            # rec_text += f"   Expected reward: {recommendation['expected_reward']:.1f}\n"
+            # rec_text += f"   Human intent: {recommendation['intent']:.2f}"
+            recommendation_text.set_text(rec_text)
+        else:
+            recommendation_text.set_text("\n No clear recommendation. \n\n")
+    else:
+        recommendation_text.set_text("")
     
-    # --- 3. Initialize Drone Target (once we have first intent) ---
+    # --- 4. Initialize Drone Target (once we have first intent) ---
     if not drone_initialized and probabilities:
         drone_agent.initialize_target(probabilities)
         drone_initialized = True
     
-    # --- 4. Update Drone Based on Intent ---
+    # --- 5. Update Drone Based on Intent ---
     if drone_initialized:
         drone_agent.update_target(probabilities, intent_system.completed_tasks, total_time)
         drone_agent.move_towards_target(delta_time)
     
-    # --- 5. Update Intent System for Drone (to check completion) ---
+    # --- 6. Update Intent System for Drone (to check completion) ---
     drone_pos = drone_agent.get_position()
     intent_system.update(
         current_position=drone_pos,
         current_time=total_time,
         agent_id='drone'
     )
-    
-    # --- 6. Update Plot Artists ---
-    
+
+    # --- 7. Update Plot Artists ---
+
     # Car
     car_artist.center = (car_position[0], car_position[1])
     
@@ -331,7 +398,7 @@ def update(frame):
             task_labels[name].set_color('#b91c1c')
             
     artists = [car_artist, car_heading_line, drone_artist, drone_target_line,
-               time_text, drone_status_text] + \
+               time_text, drone_status_text, recommendation_text] + \
               list(prob_lines.values()) + \
               list(task_radius_plots.values()) + \
               list(prob_bars) + \
