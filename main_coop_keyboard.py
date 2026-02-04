@@ -10,23 +10,32 @@ from recommendation import RecommendationManager
 
 # Task positions
 tasks = {
-    "box1": np.array([5.0, 5.0, 0.0]),
-    "box2": np.array([-5.0, 5.0, 0.0]),
-    "dummy": np.array([0.0, 10.0, 0.0]),
+    # "box1": np.array([5.0, 5.0, 0.0]),
+    # "box2": np.array([-5.0, 5.0, 0.0]),
+    # "dummy": np.array([0.0, 10.0, 0.0]),
+    "Black toolbox": np.array([0.22931592166423798, 0.10323812067508698, 0.0]),
+    "Blue toolbox": np.array([7.514193534851074, -0.8613284826278687, 0.0]),
+    "Dummy": np.array([5.7105512619018555, 0.8945932388305664, 0.0]),
 }
 
 # Define task types
 task_types = {
-    "box1": "independent",
-    "box2": "independent",
-    "dummy": "cooperative",
+    # "box1": "independent",
+    # "box2": "independent",
+    # "dummy": "cooperative",
+    "Black toolbox": "independent",
+    "Blue toolbox": "independent",
+    "Dummy": "cooperative",
 }
 
 # Define task rewards
 task_rewards_dict = {
-    "box1": 5.0,
-    "box2": 5.0,
-    "dummy": 10.0
+    # "box1": 5.0,
+    # "box2": 5.0,
+    # "dummy": 10.0
+    "Black toolbox": 5.0,
+    "Blue toolbox": 5.0,
+    "Dummy": 10.0
 }
 
 task_names = sorted(tasks.keys())
@@ -37,13 +46,13 @@ os.makedirs(log_path, exist_ok=True)
 # --- 2. Initialize the Intent Inference System ---
 
 try:
-    completion_radius = 1.0 
+    completion_radius = 0.6  # meters
     
     intent_system = IntentInferenceSystem(
         task_positions=tasks,
         task_types=task_types,
         lambda_dist=0.3,
-        gamma_dir=1.0,
+        gamma_dir=1.5,
         task_completion_radius=completion_radius,
         distance_scale_factor=1.0,
         inference_interval=0.5,
@@ -58,11 +67,11 @@ except Exception as e:
 # --- 3. Simulation State ---
 
 # Car state
-car_position = np.array([0.0, -1.0, 0.0])
+car_position = np.array([2.0, -2.5, 0.0])
 car_angle = np.pi / 2
 car_radius = 0.2
 current_speed = 0.0
-max_speed = 2.5
+max_speed = 2.
 acceleration = 2.0
 friction = 1.0
 turn_speed = np.pi * 0.85
@@ -78,13 +87,13 @@ keys_pressed = {}
 # --- 4. Initialize Drone Cooperation Agent ---
 
 try:
-    drone_initial_position = np.array([0.0, -1.0, 0.0])
+    drone_initial_position = np.array([2.0, -2.5, 0.0])
     
     drone_agent = DroneCooperationAgent(
         task_positions=tasks,
         task_types=task_types,
         initial_position=drone_initial_position,
-        speed=1.5,
+        speed=1.,
         intent_threshold=0.7,  # Can adjust this (must be >= 0.5)
         commitment_distance=5.0,
         dummy_wait_timeout=5.0
@@ -131,10 +140,12 @@ except Exception as e:
 
 # --- 6. Setup the Matplotlib Animation ---
 
-fig, ax = plt.subplots(figsize=(10, 8))
+fig, ax = plt.subplots(figsize=(12, 7))
 ax.set_aspect('equal')
-ax.set_xlim(-8, 8)
-ax.set_ylim(-2, 12)
+# ax.set_xlim(-8, 8)
+ax.set_xlim(-6, 10)
+# ax.set_ylim(-2, 12)
+ax.set_ylim(-4, 4)
 ax.set_title("Multi-Agent Intent Inference & Cooperation")
 ax.set_xlabel("X coordinate (m)")
 ax.set_ylabel("Y coordinate (m)")
@@ -179,11 +190,11 @@ for name, pos in tasks.items():
     prob_lines[name] = line
 
 # Time text
-time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
+time_text = ax.text(0.1, 0.85, '', transform=ax.transAxes)
 
 # Recommendation text
 recommendation_text = ax.text(
-    -9.8, 8.1, '',
+    -6.9, -1.5, '',
     fontsize=10,
     bbox=dict(boxstyle='square', facecolor='lightgreen', alpha=0.8, edgecolor='none'),
     verticalalignment='top',
@@ -194,7 +205,7 @@ recommendation_text = ax.text(
 drone_status_text = ax.text(0.02, 0.90, '', transform=ax.transAxes, fontsize=9, color='darkorange')
 
 # Probability bars
-ax_bar = fig.add_axes([0.08, 0.7, 0.2, 0.2])
+ax_bar = fig.add_axes([0.09, 0.65, 0.2, 0.2])
 ax_bar.set_xlim(0, 1)
 ax_bar.set_yticks(np.arange(len(task_names)))
 ax_bar.set_yticklabels(task_names)
