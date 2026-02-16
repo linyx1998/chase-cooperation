@@ -12,6 +12,9 @@ __pycache__/
 logs/
 *.log
 
+demo_creation/
+main_backup/
+
 # Virtual environments
 venv/
 .env/

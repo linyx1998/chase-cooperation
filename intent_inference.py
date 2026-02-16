@@ -7,7 +7,7 @@ from typing import Dict, Set, Optional, Tuple, List
 class IntentInferenceSystem:
     """
     - Reset: p_k(j) ∝ exp(-λ dist(j))
-    - Update: p_k(j) ∝ exp(-λ dist(j)) × exp(γ cos(θ_j))
+    - Update: p_k(j) ∝ exp(-λ dist(j)) x exp(γ cos(θ_j))
     """
     
     def __init__(

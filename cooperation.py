@@ -326,7 +326,8 @@ class DroneCooperationAgent:
         speed: float = 1.5,
         intent_threshold: float = 0.5,
         commitment_distance: float = 4.0,
-        dummy_wait_timeout: float = 10.0
+        dummy_wait_timeout: float = 10.0,
+        task_completion_radius: float = 0.5
     ):
         """
         Args:
@@ -348,6 +349,7 @@ class DroneCooperationAgent:
         self.intent_threshold = intent_threshold
         self.commitment_distance = commitment_distance
         self.dummy_wait_timeout = dummy_wait_timeout
+        self.task_completion_radius = task_completion_radius
         
         # Identify box tasks (independent tasks)
         self.box_tasks = [name for name, typ in task_types.items() if typ == 'independent']
@@ -408,10 +410,23 @@ class DroneCooperationAgent:
                 print(f"Drone initial target: {self.target} (based on human intent)")
                 return self.target
         
-        # Default: go to dummy
-        self.target = self.cooperative_task
-        print(f"Drone initial target: {self.target} (default)")
+        # # Default: go to dummy
+        # self.target = self.cooperative_task
+        # print(f"Drone initial target: {self.target} (default)")
         
+        # return self.target
+        
+        # Default: go to nearest uncompleted task
+        candidates = [t for t in self.task_positions.keys() if t not in completed_tasks]
+
+        if not candidates:
+            # Fallback (should rarely happen)
+            self.target = self.cooperative_task
+        else:
+            pos = self.position[:2]
+            self.target = min(candidates, key=lambda t: np.linalg.norm(self.task_positions[t][:2] - pos))
+
+        print(f"Drone initial target: {self.target} (nearest uncompleted)")
         return self.target
     
     def update_target(
@@ -425,6 +440,14 @@ class DroneCooperationAgent:
         """
         if not human_intent_probs:
             return self.target
+        
+        all_tasks = set(self.task_positions.keys())
+        if completed_tasks >= all_tasks:
+            if self.target is not None:
+                print(f"All tasks completed, setting target to None")
+            self.target = None
+            self.dummy_arrival_time = None
+            return None
         
         # Check if current target is completed
         if self.target in completed_tasks:
@@ -444,7 +467,7 @@ class DroneCooperationAgent:
         if self.target == self.cooperative_task:
             target_pos = self.task_positions[self.target][:2]
             dist = np.linalg.norm(self.position[:2] - target_pos)
-            if dist < 0.5:
+            if dist < self.task_completion_radius:
                 if self.dummy_arrival_time is None:
                     self.dummy_arrival_time = current_time
             else:
@@ -497,6 +520,9 @@ class DroneCooperationAgent:
                 if (self.dummy_timeout_cooldown_until is not None and 
                     current_time < self.dummy_timeout_cooldown_until):
                     return self.target
+                
+                # if self.cooperative_task in completed_tasks:
+                #     return self.target
                 
                 if self.target != self.cooperative_task:
                     print(f"Human -> {max_intent_task}, Drone: {self.target} -> {self.cooperative_task}")
@@ -571,6 +597,220 @@ class DroneCooperationAgent:
         dist_to_target = np.linalg.norm(to_target)
         
         # Move if not already at target
+        if dist_to_target > 0.1:
+            direction = to_target / dist_to_target
+            move_distance = min(self.speed * delta_time, dist_to_target)
+            self.position[0] += direction[0] * move_distance
+            self.position[1] += direction[1] * move_distance
+        
+        return self.position
+    
+    def get_position(self) -> np.ndarray:
+        """Get current position"""
+        return self.position.copy()
+    
+    def get_target(self) -> Optional[str]:
+        """Get current target task name"""
+        return self.target
+    
+    
+class IndependentDroneAgent:
+    """
+    Independent drone agent with greedy nearest-task strategy.
+    
+    Logic:
+    - Always go to the nearest uncompleted task
+    - Wait at cooperative tasks with timeout
+    - After timeout, temporarily avoid cooperative tasks (cooldown period)
+    """
+    
+    def __init__(
+        self,
+        task_positions: Dict[str, np.ndarray],
+        task_types: Dict[str, str],
+        initial_position: np.ndarray,
+        speed: float = 1.0,
+        cooperative_wait_timeout: float = 5.0,
+        task_completion_radius: float = 0.5
+    ):
+        """
+        Args:
+            task_positions: Dictionary of task names to positions
+            task_types: Dictionary of task names to types ('independent' or 'cooperative')
+            initial_position: Starting position of the drone
+            speed: Movement speed (m/s)
+            cooperative_wait_timeout: Max time to wait at cooperative task before giving up (seconds)
+        """
+        self.task_positions = task_positions
+        self.task_types = task_types
+        self.position = initial_position.copy()
+        self.speed = speed
+        self.cooperative_wait_timeout = cooperative_wait_timeout
+        self.task_completion_radius = task_completion_radius
+        
+        # Identify cooperative task
+        cooperative_tasks = [name for name, typ in task_types.items() if typ == 'cooperative']
+        self.cooperative_task = cooperative_tasks[0] if cooperative_tasks else None
+        
+        # State variables
+        self.target: Optional[str] = None
+        self.cooperative_arrival_time: Optional[float] = None
+        self.cooperative_timeout_cooldown_until: Optional[float] = None
+        
+        print(f"IndependentDroneAgent initialized:")
+        print(f"  - Speed: {speed} m/s")
+        print(f"  - Cooperative wait timeout: {cooperative_wait_timeout}s")
+        print(f"  - Cooperative task: {self.cooperative_task}")
+    
+    def initialize_target(self, human_intent_probs=None, completed_tasks=None):
+        """
+        Initialize drone target (goes to nearest uncompleted task).
+        
+        Note: human_intent_probs parameter is ignored (kept for interface consistency).
+        """
+        if completed_tasks is None:
+            completed_tasks = set()
+        
+        uncompleted = [name for name in self.task_positions.keys() 
+                      if name not in completed_tasks]
+        
+        if not uncompleted:
+            self.target = None
+            return None
+        
+        # Find nearest uncompleted task
+        min_dist = float('inf')
+        nearest = None
+        for task_name in uncompleted:
+            task_pos = self.task_positions[task_name][:2]
+            dist = np.linalg.norm(self.position[:2] - task_pos)
+            if dist < min_dist:
+                min_dist = dist
+                nearest = task_name
+        
+        self.target = nearest
+        print(f"[Independent] Initial target: {self.target}")
+        return self.target
+    
+    def update_target(
+        self,
+        human_intent_probs: Dict[str, float],
+        completed_tasks: Set[str],
+        current_time: float
+    ) -> Optional[str]:
+        """
+        Update drone target (goes to nearest uncompleted task).
+        
+        Note: human_intent_probs parameter is ignored (kept for interface consistency).
+        """
+        # Check if all tasks completed
+        all_tasks = set(self.task_positions.keys())
+        if completed_tasks >= all_tasks:
+            if self.target is not None:
+                print(f"[Independent] All tasks completed")
+            self.target = None
+            self.cooperative_arrival_time = None
+            return None
+        
+        # Check if current target is completed
+        if self.target in completed_tasks:
+            self.target = None
+            self.cooperative_arrival_time = None
+        
+        # Track arrival at cooperative task
+        if self.target == self.cooperative_task:
+            target_pos = self.task_positions[self.target][:2]
+            dist = np.linalg.norm(self.position[:2] - target_pos)
+            
+            if dist < self.task_completion_radius:
+                if self.cooperative_arrival_time is None:
+                    self.cooperative_arrival_time = current_time
+            else:
+                self.cooperative_arrival_time = None
+        else:
+            self.cooperative_arrival_time = None
+        
+        # Check cooperative timeout
+        if (self.target == self.cooperative_task and 
+            self.cooperative_arrival_time is not None and 
+            current_time - self.cooperative_arrival_time > self.cooperative_wait_timeout):
+            
+            available_independent = [name for name in self.task_positions.keys()
+                                    if name not in completed_tasks and 
+                                    self.task_types[name] == 'independent']
+            
+            if available_independent:
+                # Find nearest independent task
+                min_dist = float('inf')
+                nearest = None
+                for task_name in available_independent:
+                    task_pos = self.task_positions[task_name][:2]
+                    dist = np.linalg.norm(self.position[:2] - task_pos)
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest = task_name
+                
+                self.target = nearest
+                self.cooperative_arrival_time = None
+                self.cooperative_timeout_cooldown_until = current_time + 5.0
+                return self.target
+        
+        # If no target, find nearest uncompleted task
+        if self.target is None:
+            uncompleted = [name for name in self.task_positions.keys() 
+                          if name not in completed_tasks]
+            
+            if not uncompleted:
+                return None
+            
+            # Determine candidates (consider cooldown)
+            candidates = uncompleted
+            
+            if (self.cooperative_timeout_cooldown_until is not None and 
+                current_time < self.cooperative_timeout_cooldown_until):
+                
+                independent_tasks = [name for name in uncompleted 
+                                    if self.task_types[name] == 'independent']
+                
+                if independent_tasks:
+                    candidates = independent_tasks
+                else:
+                    candidates = uncompleted
+            else:
+                if self.cooperative_timeout_cooldown_until is not None:
+                    self.cooperative_timeout_cooldown_until = None
+            
+            # Find nearest from candidates
+            min_dist = float('inf')
+            nearest = None
+            for task_name in candidates:
+                task_pos = self.task_positions[task_name][:2]
+                dist = np.linalg.norm(self.position[:2] - task_pos)
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest = task_name
+            
+            self.target = nearest
+        
+        return self.target
+    
+    def move_towards_target(self, delta_time: float) -> np.ndarray:
+        """
+        Move drone towards its target at constant speed.
+        
+        Args:
+            delta_time: Time elapsed since last update (seconds)
+            
+        Returns:
+            Updated position
+        """
+        if self.target is None:
+            return self.position
+        
+        target_pos = self.task_positions[self.target][:2]
+        to_target = target_pos - self.position[:2]
+        dist_to_target = np.linalg.norm(to_target)
+        
         if dist_to_target > 0.1:
             direction = to_target / dist_to_target
             move_distance = min(self.speed * delta_time, dist_to_target)
