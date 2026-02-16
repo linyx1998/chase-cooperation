@@ -11,7 +11,7 @@ from recommendation import RecommendationManager
 # ============================================================================
 # EXPERIMENT CONFIGURATION
 # ============================================================================
-EXPERIMENT_MODE = 'proposed'  # Options: 'proposed', 'heuristic', 'independent'
+EXPERIMENT_MODE = 'heuristic'  # Options: 'proposed', 'heuristic', 'independent'
 
 print("="*80)
 print(f"EXPERIMENT MODE: {EXPERIMENT_MODE.upper()}")
@@ -32,11 +32,11 @@ tasks_real = {
 tasks_1 = {
     "Black toolbox": np.array([-4, 0.5, 0.0]),
     "Blue toolbox": np.array([8, 0.5, 0.0]),
-    "Dummy": np.array([2, 0.8, 0.0]),
+    "Dummy": np.array([2, 1.0, 0.0]),
 }
 
 tasks_2 = {
-    "Black toolbox": np.array([-3.5, 1.5, 0.0]),
+    "Black toolbox": np.array([-3.5, 0.5, 0.0]),
     "Blue toolbox": np.array([8.5, -0.5, 0.0]),
     "Dummy": np.array([8.5, -2.0, 0.0]),
 }
@@ -47,13 +47,14 @@ tasks_3 = {
     "Dummy": np.array([4.5, -2.0, 0.0]),
 }
 
-tasks_4 = {
-    "Black toolbox": np.array([0, 0.8, 0.0]),
-    "Blue toolbox": np.array([8.5, -1.0, 0.0]),
-    "Dummy": np.array([3, -1.0, 0.0]),
-}
+ENV_NAME = "tasks_1"   # options: tasks_1 / tasks_2 / tasks_3
 
-tasks = tasks_4   # Change this to switch task configurations
+if ENV_NAME == "tasks_1":
+    tasks = tasks_1
+elif ENV_NAME == "tasks_2":
+    tasks = tasks_2
+elif ENV_NAME == "tasks_3":
+    tasks = tasks_3
 
 task_types = {
     "Black toolbox": "independent",
@@ -71,7 +72,7 @@ task_names = sorted(tasks.keys())
 
 # Create log directory
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-log_path = f"./logs/{EXPERIMENT_MODE}_{timestamp}"
+log_path = f"./logs/{EXPERIMENT_MODE}_{ENV_NAME}_{timestamp}"
 os.makedirs(log_path, exist_ok=True)
 print(f"Log directory: {log_path}\n")
 
@@ -118,7 +119,7 @@ last_drone_position = None
 
 # Human waiting time at dummy
 human_dummy_arrival_time = None
-human_wait_timeout = 3.0  # seconds
+human_wait_timeout = 5.0  # seconds
 
 # ============================================================================
 # Initialize Drone Agent
