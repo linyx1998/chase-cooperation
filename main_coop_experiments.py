@@ -11,7 +11,7 @@ from recommendation import RecommendationManager
 # ============================================================================
 # EXPERIMENT CONFIGURATION
 # ============================================================================
-EXPERIMENT_MODE = 'heuristic'  # Options: 'proposed', 'heuristic', 'independent'
+EXPERIMENT_MODE = 'proposed'  # Options: 'proposed', 'heuristic', 'independent'
 
 print("="*80)
 print(f"EXPERIMENT MODE: {EXPERIMENT_MODE.upper()}")
@@ -43,11 +43,11 @@ tasks_2 = {
 
 tasks_3 = {
     "Black toolbox": np.array([8.5, 1.0, 0.0]),
-    "Blue toolbox": np.array([-4, 1.5, 0.0]),
+    "Blue toolbox": np.array([-4, 0, 0.0]),
     "Dummy": np.array([4.5, -2.0, 0.0]),
 }
 
-ENV_NAME = "tasks_1"   # options: tasks_1 / tasks_2 / tasks_3
+ENV_NAME = "tasks_3"   # options: tasks_1 / tasks_2 / tasks_3
 
 if ENV_NAME == "tasks_1":
     tasks = tasks_1
