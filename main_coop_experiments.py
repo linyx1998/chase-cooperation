@@ -7,11 +7,28 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from cooperation import IntentInferenceSystem, DroneCooperationAgent, IndependentDroneAgent
 from recommendation import RecommendationManager
+import argparse
+
+# ============================================================================
+# Parse Arguments
+# ============================================================================
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--mode", type=str, default="proposed", choices=["proposed", "independent"])
+
+parser.add_argument("--tasks_id", type=int, default=1, choices=[1, 2, 3, 'real'])
+
+parser.add_argument("--case", type=str, default="R1", choices=["R1", "R2", "A"])
+
+parser.add_argument("--commit_distance", type=float, default=1.5)
+
+args = parser.parse_args()
 
 # ============================================================================
 # EXPERIMENT CONFIGURATION
 # ============================================================================
-EXPERIMENT_MODE = 'proposed'  # Options: 'proposed', 'heuristic', 'independent'
+EXPERIMENT_MODE = args.mode  # Options: 'proposed', 'independent'
+CASE_NAME = args.case  # Options: 'R1', 'R2', 'A', where R1/R2 are rational cases and A is the ambiguous case
 
 print("="*80)
 print(f"EXPERIMENT MODE: {EXPERIMENT_MODE.upper()}")
@@ -24,21 +41,21 @@ drone_initial_position = np.array([3, -2.5, 0.0])
 car_initial_position = np.array([3, -2.5, 0.0])
 
 tasks_real = {
-    "Black toolbox": np.array([5.7105512619018555, 0.8945932388305664, 0.0]),
+    "Black toolbox": np.array([0.22931592166423798, 0.10323812067508698, 0.0]),
     "Blue toolbox": np.array([7.514193534851074, -0.8613284826278687, 0.0]),
-    "Dummy": np.array([0.22931592166423798, 0.10323812067508698, 0.0]),
+    "Dummy": np.array([5.7105512619018555, 0.8945932388305664, 0.0]),
 }
 
 tasks_1 = {
-    "Black toolbox": np.array([-4, 0.5, 0.0]),
-    "Blue toolbox": np.array([8, 0.5, 0.0]),
-    "Dummy": np.array([2, 1.0, 0.0]),
+    "Black toolbox": np.array([-3, 0.5, 0.0]),
+    "Blue toolbox": np.array([9, 0.5, 0.0]),
+    "Dummy": np.array([3, 1.0, 0.0]),
 }
 
 tasks_2 = {
-    "Black toolbox": np.array([-3.5, 0.5, 0.0]),
-    "Blue toolbox": np.array([8.5, -0.5, 0.0]),
-    "Dummy": np.array([8.5, -2.0, 0.0]),
+    "Black toolbox": np.array([-1, 0.5, 0.0]),
+    "Blue toolbox": np.array([1, 2, 0.0]),
+    "Dummy": np.array([8, -1.0, 0.0]),
 }
 
 tasks_3 = {
@@ -47,14 +64,19 @@ tasks_3 = {
     "Dummy": np.array([4.5, -2.0, 0.0]),
 }
 
-ENV_NAME = "tasks_3"   # options: tasks_1 / tasks_2 / tasks_3
+# ENV_NAME = "tasks_2"   # options: tasks_1 / tasks_2 / tasks_3 / tasks_real
+TASK_ID = args.tasks_id
 
-if ENV_NAME == "tasks_1":
+if TASK_ID == 1:
     tasks = tasks_1
-elif ENV_NAME == "tasks_2":
+elif TASK_ID == 2:
     tasks = tasks_2
-elif ENV_NAME == "tasks_3":
+elif TASK_ID == 3:
     tasks = tasks_3
+elif TASK_ID == 'real':
+    tasks = tasks_real
+else:
+    raise ValueError(f"Invalid TASK_ID: {TASK_ID}")
 
 task_types = {
     "Black toolbox": "independent",
@@ -71,8 +93,8 @@ task_rewards_dict = {
 task_names = sorted(tasks.keys())
 
 # Create log directory
-timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-log_path = f"./logs/{EXPERIMENT_MODE}_{ENV_NAME}_{timestamp}"
+timestamp = datetime.datetime.now().strftime("%m%d_%H%M%S")
+log_path = f"./logs/{EXPERIMENT_MODE}_tasks_{TASK_ID}_{CASE_NAME}_{timestamp}"
 os.makedirs(log_path, exist_ok=True)
 print(f"Log directory: {log_path}\n")
 
@@ -119,7 +141,7 @@ last_drone_position = None
 
 # Human waiting time at dummy
 human_dummy_arrival_time = None
-human_wait_timeout = 5.0  # seconds
+human_wait_timeout = 2.0  # seconds
 
 # ============================================================================
 # Initialize Drone Agent
@@ -130,9 +152,9 @@ drone_agent = DroneCooperationAgent(
     task_positions=tasks,
     task_types=task_types,
     initial_position=drone_initial_position,
-    speed=0.8,
+    speed=1.0,
     intent_threshold=0.5,
-    commitment_distance=3.0,
+    commitment_distance=args.commit_distance,
     dummy_wait_timeout=5.0,
     task_completion_radius=completion_radius
 )
@@ -174,7 +196,7 @@ car_position = car_initial_position
 car_angle = np.pi / 2
 car_radius = 0.2
 current_speed = 0.0
-max_speed = 1.5
+max_speed = 1.0
 acceleration = 2.0
 friction = 1.0
 turn_speed = np.pi * 0.85
@@ -319,12 +341,6 @@ def update(frame):
     global last_human_position, last_drone_position
     global last_csv_record_time
     global human_dummy_arrival_time 
-    
-    # ========================================================================
-    # Check if all tasks completed - stop updates
-    # ========================================================================
-    # if len(intent_system.completed_tasks) >= len(tasks):
-    #     return []
     
     # ========================================================================
     # Check if all tasks completed
@@ -631,7 +647,7 @@ finally:
     print("EXPERIMENT COMPLETE")
     print("="*80)
     print(f"Mode: {EXPERIMENT_MODE}")
-    print(f"Time: {time.time() - start_time:.2f}s")
+    print(f"Time: {update.final_time:2f}s")
     print(f"Human distance: {human_cumulative_distance:.2f}m")
     print(f"Drone distance: {drone_cumulative_distance:.2f}m")
     print(f"Total: {human_cumulative_distance + drone_cumulative_distance:.2f}m")

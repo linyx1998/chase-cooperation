@@ -1,4 +1,5 @@
 This module infers a human’s current target (intent) from the robot’s motion using distance and direction cues:
+
 $$
 p(j)\ \propto\ \exp(-\lambda \cdot \text{dist}(j)) \times \exp(\gamma \cdot \cos \theta_j)
 $$
@@ -7,8 +8,6 @@ $$
 - **Direction evidence** increases when the robot’s movement heading aligns with the direction of a task.
 - Probabilities are **renormalized** at every inference step.
 - When the robot reaches a task within a **completion radius**, that task is marked completed and excluded from future inference.
-
-
 
 Minimal Usage:
 
