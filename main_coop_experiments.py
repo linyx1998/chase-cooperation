@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--mode", type=str, default="proposed", choices=["proposed", "independent"])
 
-parser.add_argument("--tasks_id", type=int, default=1, choices=[1, 2, 3, 'real'])
+parser.add_argument("--tasks_id", type=str, default="1", choices=["1", "2", "3", "real"])
 
 parser.add_argument("--case", type=str, default="R1", choices=["R1", "R2", "A"])
 
@@ -67,11 +67,11 @@ tasks_3 = {
 # ENV_NAME = "tasks_2"   # options: tasks_1 / tasks_2 / tasks_3 / tasks_real
 TASK_ID = args.tasks_id
 
-if TASK_ID == 1:
+if TASK_ID == "1":
     tasks = tasks_1
-elif TASK_ID == 2:
+elif TASK_ID == "2":
     tasks = tasks_2
-elif TASK_ID == 3:
+elif TASK_ID == "3":
     tasks = tasks_3
 elif TASK_ID == 'real':
     tasks = tasks_real
